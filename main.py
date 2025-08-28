@@ -1,10 +1,9 @@
-import os, re, json, requests
-from uuid import uuid4
+import requests
+import os
+from telegram import Update
+from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
 from flask import Flask
 from threading import Thread
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-import asyncio
 
 TOKEN = os.getenv("BOT_TOKEN")
 
@@ -22,103 +21,78 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# === RESET ALL APIs ===
-def reset_all(user):
-    results = []
-
-    # === API 1: Web AJAX ===
-    try:
-        url = "https://www.instagram.com/accounts/account_recovery_send_ajax/"
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Referer": "https://www.instagram.com/accounts/password/reset/",
-            "X-CSRFToken": "csrftoken",
-        }
-        data = {"email_or_username": user, "recaptcha_challenge_field": ""}
-        r = requests.post(url, headers=headers, data=data)
-
-        if r.status_code == 200:
-            match = re.search(r"<b>(.*?)</b>", r.text)
-            if match:
-                results.append(f"✅ Web1: {match.group(1)}")
-            else:
-                results.append("⚠️ Web1: No obfuscated email found")
-        else:
-            results.append(f"❌ Web1: HTTP {r.status_code}")
-    except Exception as e:
-        results.append(f"❌ Web1: {e}")
-
-    # === API 2: Mobile API ===
-    try:
-        url_info = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={user}"
-        headers_info = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-        resp = requests.get(url_info, headers=headers_info)
-        info = resp.json()
-
-        user_id = info["data"]["user"]["id"]
-
-        url_reset = "https://i.instagram.com/api/v1/accounts/send_password_reset/"
-        headers_reset = {"User-Agent": "Instagram 100.0.0.17.129 Android"}
-        data = {"user_id": user_id, "device_id": str(uuid4())}
-        r = requests.post(url_reset, headers=headers_reset, data=data)
-        js = r.json()
-
-        if "obfuscated_email" in js:
-            results.append(f"✅ Mobile: {js['obfuscated_email']}")
-        else:
-            results.append(f"⚠️ Mobile: {js}")
-    except Exception as e:
-        results.append(f"❌ Mobile: {e}")
-
-    # === API 3: Web v2 ===
-    try:
-        url = "https://www.instagram.com/api/v1/web/accounts/account_recovery_send_ajax/"
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-        data = {"email_or_username": user, "flow": "fxcal"}
-        r = requests.post(url, headers=headers, data=data)
-        js = r.json()
-
-        if js.get("status") == "ok":
-            results.append(f"✅ Web2: {js.get('message','No message')}")
-        elif js.get("status") == "fail":
-            results.append(f"❌ Web2: {js.get('message','Failed')}")
-        else:
-            results.append(f"⚠️ Web2: {js}")
-    except Exception as e:
-        results.append(f"❌ Web2: {e}")
-
-    return "\n".join(results)
-
-# === COMMAND HANDLERS ===
+# === START COMMAND ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Send /reset <username or email> to check reset email status via all APIs."
-    )
+    await update.message.reply_text("Send an Instagram username to check reset email status.")
 
-async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    username = " ".join(context.args)
-    if not username:
-        await update.message.reply_text("⚠️ Usage: /reset <username>")
-        return
+# === IG RESET EMAIL CHECK ===
+def eizon(user):
+    try:
+        headers = {
+            'X-Pigeon-Session-Id': '50cc6861-7036-43b4-802e-fb4282799c60',
+            'X-Pigeon-Rawclienttime': '1700251574.982',
+            'X-IG-Connection-Speed': '-1kbps',
+            'X-IG-Bandwidth-Speed-KBPS': '-1.000',
+            'X-IG-Bandwidth-TotalBytes-B': '0',
+            'X-IG-Bandwidth-TotalTime-MS': '0',
+            'X-Bloks-Version-Id': 'c80c5fb30dfae9e273e4009f03b18280bb343b0862d663f31a3c63f13a9f31c0',
+            'X-IG-Connection-Type': 'WIFI',
+            'X-IG-Capabilities': '3brTvw==',
+            'X-IG-App-ID': '567067343352427',
+            'User-Agent': ('Instagram 100.0.0.17.129 Android (29/10; 420dpi; '
+                           '1080x2129; samsung; SM-M205F; m20lte; exynos7904; '
+                           'en_GB; 161478664)'),
+            'Accept-Language': 'en-GB,en-US',
+            'Cookie': 'mid=ZVfGvgABAAGoQqa7AY3mgoYBV1nP; csrftoken=9y3N5kLqzialQA7z96AMiyAKLMBWpqVj',
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            'Accept-Encoding': 'gzip, deflate',
+            'Host': 'i.instagram.com',
+            'X-FB-HTTP-Engine': 'Liger',
+            'Connection': 'keep-alive',
+        }
 
-    await update.message.reply_text("🔄 Sending reset via all APIs...")
+        data = {
+            'signed_body': (
+                '0d067c2f86cac2c17d655631c9cec2402012fb0a329bcafb3b1f4c0bb56b1f1f.'
+                f'{{"_csrftoken":"9y3N5kLqzialQA7z96AMiyAKLMBWpqVj",'
+                f'"adid":"0dfaf820-2748-4634-9365-c3d8c8011256",'
+                f'"guid":"1f784431-2663-4db9-b624-86bd9ce1d084",'
+                f'"device_id":"android-b93ddb37e983481c",'
+                f'"query":"{user}"}}'
+            ),
+            'ig_sig_key_version': '4'
+        }
 
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, reset_all, username)
+        url = 'https://i.instagram.com/api/v1/accounts/send_recovery_flow_email/'
+        response = requests.post(url, headers=headers, data=data)
+
+        if response.status_code == 200:
+            json_data = response.json()
+            if json_data.get("status") == "ok":
+                return "✅ Reset email sent!"
+            else:
+                return f"⚠️ {json_data}"
+        else:
+            return f"❌ HTTP {response.status_code}:\n{response.text}"
+
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+# === MESSAGE HANDLER ===
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    username = update.message.text.strip()
+    await update.message.reply_text("🔄 Checking reset email...")
+    result = eizon(username)
     await update.message.reply_text(result)
 
 # === MAIN ===
 def main():
-    keep_alive()
+    keep_alive()  # 👈 Keeps server running
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("reset", reset_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("🤖 Bot running...")
     app.run_polling()
 
 if __name__ == "__main__":
